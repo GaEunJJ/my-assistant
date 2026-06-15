@@ -1,0 +1,52 @@
+spring:
+  application:
+    name: myassistant
+
+  # R2DBC - 사용자/세션 관리용 DB 연결
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/myassistant
+    username: myassistant
+    password: myassistant
+
+  # JDBC - PgVector는 내부적으로 JDBC를 사용 (R2DBC와 별도로 필요)
+  datasource:
+    url: jdbc:postgresql://localhost:5432/myassistant
+    username: myassistant
+    password: myassistant
+    driver-class-name: org.postgresql.Driver
+
+  # 파일 업로드 설정
+  servlet:
+    multipart:
+      max-file-size: 50MB      # 파일 하나 최대 크기
+      max-request-size: 50MB   # 요청 전체 최대 크기
+
+  # Spring AI - OpenAI 설정
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}   # 환경변수로 관리 (절대 하드코딩 금지)
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.7         # 0에 가까울수록 일관된 답변, 1에 가까울수록 창의적
+      embedding:
+        options:
+          model: text-embedding-3-small
+
+    # PgVector 설정
+    vectorstore:
+      pgvector:
+        initialize-schema: true    # 최초 실행 시 벡터 테이블 자동 생성
+        dimensions: 1536           # text-embedding-3-small 차원수
+        index-type: hnsw           # 검색 성능 최적화 인덱스
+        distance-type: cosine_distance
+
+# 서버 포트
+server:
+  port: 8080
+
+# 로깅 설정
+logging:
+  level:
+    org.springframework.ai: DEBUG  # Spring AI 동작 확인용 (개발 중에만)
+    com.myassistant: DEBUG
