@@ -1,4 +1,4 @@
-# 📄 DocTalk — 내 문서로 만드는 나만의 AI 어시스턴트
+# 📄 myassistant — 내 문서로 만드는 나만의 AI 어시스턴트
 
 > PDF, DOCX 등 문서를 업로드하면, 그 문서를 기반으로 AI가 실시간으로 답변해주는 멀티테넌트 RAG 챗봇 서비스
 
@@ -26,12 +26,12 @@
 
 ## 💡 프로젝트 개요
 
-DocTalk는 사용자가 업로드한 문서(PDF, DOCX, TXT)를 기반으로 AI와 대화할 수 있는 **멀티테넌트 RAG(Retrieval-Augmented Generation) 챗봇 서비스**입니다.
+myassistant는 사용자가 업로드한 문서(PDF, DOCX, TXT)를 기반으로 AI와 대화할 수 있는 **멀티테넌트 RAG(Retrieval-Augmented Generation) 챗봇 서비스**입니다.
 
 ### 만들게 된 배경
 
 기존 챗봇 서비스는 LLM이 학습한 일반 지식만 답변에 활용합니다.  
-DocTalk는 **사용자 본인의 문서**를 기반으로 답변을 생성하여, 다음 문제를 해결합니다.
+myassistant는 **사용자 본인의 문서**를 기반으로 답변을 생성하여, 다음 문제를 해결합니다.
 
 - 내부 문서나 개인 자료에 대한 질문에 정확한 답변 불가능
 - 답변 근거를 확인할 수 없어 신뢰도 부족
@@ -188,7 +188,7 @@ SearchRequest.query(message)
 ## 📁 프로젝트 구조
 
 ```
-src/main/java/com/doctalk/
+src/main/java/com/myassistant/
 ├── document/
 │   ├── DocumentController.java   # 파일 업로드 API
 │   ├── DocumentService.java      # 비동기 인덱싱 처리
@@ -218,8 +218,8 @@ src/main/java/com/doctalk/
 
 ```bash
 # 1. 레포지토리 클론
-git clone https://github.com/{username}/doctalk.git
-cd doctalk
+git clone https://github.com/{username}/myassistant.git
+cd myassistant
 
 # 2. PostgreSQL 실행 (Docker)
 docker-compose up -d
