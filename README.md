@@ -224,8 +224,6 @@ src/main/java/com/myassistant/
 ├── chat/
 │   ├── ChatController.java       # SSE 스트리밍 API
 │   └── ChatService.java          # RAG 기반 답변 생성
-├── tenant/
-│   └── TenantContext.java        # 사용자 격리 컨텍스트
 └── config/
     ├── SecurityConfig.java       # Spring Security + JWT 필터 체인 설정
     ├── VectorStoreConfig.java    # PgVector 설정
