@@ -1,5 +1,6 @@
 package com.myassistant.auth;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -10,6 +11,7 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -27,5 +29,13 @@ public class GlobalExceptionHandler {
         .collect(Collectors.joining(", "));
     return Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST)
         .body(Map.of("message", message)));
+  }
+
+  // 위에서 처리하지 못한 모든 예외에 대한 최종 안전망 — 내부 오류 상세는 로그로만 남기고 클라이언트에는 노출하지 않음
+  @ExceptionHandler(Exception.class)
+  public Mono<ResponseEntity<Map<String, String>>> handleUnexpected(Exception e) {
+    log.error("처리되지 않은 예외 발생", e);
+    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(Map.of("message", "서버 내부 오류가 발생했습니다.")));
   }
 }

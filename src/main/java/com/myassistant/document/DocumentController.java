@@ -35,8 +35,7 @@ public class DocumentController {
       @AuthenticationPrincipal UserDetails userDetails
   ) {
     if (file.isEmpty()) {
-      return ResponseEntity.badRequest()
-          .body(Map.of("message", "파일이 비어있습니다."));
+      throw new IllegalArgumentException("파일이 비어있습니다.");
     }
 
     String userId = userDetails.getUsername();

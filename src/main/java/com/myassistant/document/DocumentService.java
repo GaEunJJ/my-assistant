@@ -66,6 +66,9 @@ public class DocumentService {
       log.info("문서 인덱싱 완료 - userId: {}, file: {}, chunks: {}", userId, filename, taggedChunks.size());
 
     } catch (IOException e) {
+      log.error("문서 텍스트 추출 실패 - userId: {}, file: {}", userId, filename, e);
+    } catch (Exception e) {
+      // 비동기 스레드에서 발생한 예외는 클라이언트로 전달되지 않으므로 반드시 로깅으로 확인
       log.error("문서 인덱싱 실패 - userId: {}, file: {}", userId, filename, e);
     }
   }
