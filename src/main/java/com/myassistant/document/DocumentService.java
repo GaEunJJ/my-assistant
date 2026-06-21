@@ -46,7 +46,13 @@ public class DocumentService {
       String text = documentParser.parse(file);
 
       // 2. 청킹 (500 토큰 단위)
-      TokenTextSplitter splitter = new TokenTextSplitter(CHUNK_SIZE, CHUNK_OVERLAP, 5, 10000, true);
+      TokenTextSplitter splitter = TokenTextSplitter.builder()
+          .withChunkSize(CHUNK_SIZE)
+          .withMinChunkSizeChars(CHUNK_OVERLAP)
+          .withMinChunkLengthToEmbed(5)
+          .withMaxNumChunks(10000)
+          .withKeepSeparator(true)
+          .build();
       List<Document> chunks = splitter.split(List.of(new Document(text)));
 
       // 3. user_id 메타데이터 추가 (멀티테넌트 격리를 위한 필터 키)

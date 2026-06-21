@@ -2,7 +2,7 @@ package com.myassistant.chat;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
@@ -41,7 +41,7 @@ public class ChatService {
 
     return chatClient.prompt()
         .user(message)
-        .advisors(new QuestionAnswerAdvisor(vectorStore, searchRequest))
+        .advisors(QuestionAnswerAdvisor.builder(vectorStore).searchRequest(searchRequest).build())
         .stream()
         .content();
   }
