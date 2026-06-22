@@ -21,6 +21,11 @@ spring:
       max-file-size: 50MB      # 파일 하나 최대 크기
       max-request-size: 50MB   # 요청 전체 최대 크기
 
+  # DB 스키마 자동 초기화 (최초 실행 시 schema.sql 실행)
+  sql:
+    init:
+      mode: always
+
   # Spring AI - OpenAI 설정
   ai:
     openai:
@@ -46,12 +51,6 @@ spring:
 jwt:
   secret: ${JWT_SECRET}
   expiration: 86400000  # 24시간 (ms)
-
-# DB 스키마 자동 초기화 (최초 실행 시 schema.sql 실행)
-spring:
-  sql:
-    init:
-      mode: always
 
 # 서버 포트
 server:
