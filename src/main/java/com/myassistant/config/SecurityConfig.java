@@ -1,5 +1,7 @@
 package com.myassistant.config;
 
+import com.myassistant.oauth2.CustomOAuth2UserService;
+import com.myassistant.oauth2.OAuth2SuccessHandler;
 import com.myassistant.security.JwtAuthenticationWebFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +29,8 @@ import java.util.List;
 public class SecurityConfig {
 
   private final JwtAuthenticationWebFilter jwtAuthenticationWebFilter;
+  private final CustomOAuth2UserService customOAuth2UserService;
+  private final OAuth2SuccessHandler oauth2SuccessHandler;
 
   // 프런트엔드 도메인 (로컬 개발 기본값: Next.js dev 서버)
   @Value("${app.cors.allowed-origins:http://localhost:3000}")
@@ -40,11 +44,19 @@ public class SecurityConfig {
         // JWT는 무상태 — 세션 컨텍스트 저장 비활성화
         .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
         .authorizeExchange(exchanges -> exchanges
+            // 일반 인증 엔드포인트
             .pathMatchers("/api/auth/**").permitAll()
+            // OAuth2 로그인 시작 및 콜백 엔드포인트 허용
+            .pathMatchers("/oauth2/authorization/**", "/login/oauth2/code/**").permitAll()
             .anyExchange().authenticated()
         )
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
+        // OAuth2 소셜 로그인 설정
+        .oauth2Login(oauth2 -> oauth2
+            .authenticationSuccessHandler(oauth2SuccessHandler)
+            .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+        )
         .addFilterAt(jwtAuthenticationWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
         .build();
   }

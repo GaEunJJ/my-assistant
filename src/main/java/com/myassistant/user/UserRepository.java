@@ -8,4 +8,6 @@ public interface UserRepository extends ReactiveCrudRepository<User, Long> {
   Mono<User> findByUsername(String username);
 
   Mono<Boolean> existsByUsername(String username);
+
+  Mono<User> findByProviderAndProviderId(String provider, String providerId);
 }
