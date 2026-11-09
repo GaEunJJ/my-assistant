@@ -1,6 +1,5 @@
 package com.myassistant.config;
 
-import com.myassistant.oauth2.CustomOAuth2UserService;
 import com.myassistant.oauth2.OAuth2SuccessHandler;
 import com.myassistant.security.JwtAuthenticationWebFilter;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +28,6 @@ import java.util.List;
 public class SecurityConfig {
 
   private final JwtAuthenticationWebFilter jwtAuthenticationWebFilter;
-  private final CustomOAuth2UserService customOAuth2UserService;
   private final OAuth2SuccessHandler oauth2SuccessHandler;
 
   // 프런트엔드 도메인 (로컬 개발 기본값: Next.js dev 서버)
@@ -53,9 +51,11 @@ public class SecurityConfig {
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
         // OAuth2 소셜 로그인 설정
+        // Spring Security 6.5+는 OAuth2LoginSpec.userInfoEndpoint() API가 제거되어,
+        // ReactiveOAuth2UserService<OAuth2UserRequest, OAuth2User> 타입의 빈(CustomOAuth2UserService)을
+        // 컨텍스트에서 자동으로 찾아 사용한다 (명시적 와이어링 불필요)
         .oauth2Login(oauth2 -> oauth2
             .authenticationSuccessHandler(oauth2SuccessHandler)
-            .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
         )
         .addFilterAt(jwtAuthenticationWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
         .build();
