@@ -3,7 +3,11 @@ package com.myassistant;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
+// @EnableAsync가 없으면 DocumentService의 @Async가 무시되어 인덱싱(임베딩 호출 등 블로킹 I/O)이
+// 요청 스레드(WebFlux 이벤트 루프)에서 그대로 실행되어 버린다
+@EnableAsync
 @SpringBootApplication
 public class MyassistantApplication {
 

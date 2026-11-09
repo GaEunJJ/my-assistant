@@ -7,7 +7,6 @@ import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -33,19 +32,19 @@ public class DocumentService {
 
   /**
    * 문서를 백그라운드에서 비동기로 인덱싱
-   * - 컨트롤러는 즉시 202 반환 후 이 메서드가 별도 스레드에서 실행됨
+   * - 컨트롤러는 FilePart 내용을 바이트 배열로 다 읽은 뒤 즉시 202 반환하고, 이 메서드가 별도 스레드에서 실행됨
    *
-   * @param file   업로드된 파일
-   * @param userId 업로드한 사용자 ID (멀티테넌트 격리용)
+   * @param fileContent 업로드된 파일의 전체 바이트 배열
+   * @param filename    원본 파일명
+   * @param userId      업로드한 사용자 ID (멀티테넌트 격리용)
    */
   @Async
-  public void indexAsync(MultipartFile file, String userId) {
-    String filename = file.getOriginalFilename();
+  public void indexAsync(byte[] fileContent, String filename, String userId) {
     log.info("문서 인덱싱 시작 - userId: {}, file: {}", userId, filename);
 
     try {
       // 1. 페이지 단위로 텍스트 추출 (PDF는 실제 페이지 번호 보존)
-      List<DocumentParser.PageText> pages = documentParser.parsePages(file);
+      List<DocumentParser.PageText> pages = documentParser.parsePages(fileContent, filename);
 
       // 2. 페이지별로 청킹 후 출처 추적용 메타데이터(user_id, filename, page, chunk_index) 태깅
       List<Document> taggedChunks = tagChunks(pages, filename, userId);
