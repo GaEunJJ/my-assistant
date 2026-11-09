@@ -312,10 +312,23 @@ GET /api/chat/stream?message={질문내용}
 Accept: text/event-stream
 Authorization: Bearer {JWT}
 
-Response: 200 OK (토큰 단위 스트리밍)
+Response: 200 OK
+# 1) 답변에 사용된 출처(파일명/페이지/청크 순번 목록)를 먼저 1건 전송
+# page는 PDF만 채워지고, DOCX/TXT 등 페이지 개념이 없는 형식은 null
+event: sources
+data: [{"filename":"계약서.pdf","page":3,"chunkIndex":1},{"filename":"회의록.docx","page":null,"chunkIndex":0}]
+
+# 2) 이후 답변을 토큰 단위로 스트리밍
+event: token
 data: 안녕
+
+event: token
 data: 하세요
+
+event: token
 data: . 질문하신
+
+event: token
 data: 내용은...
 ```
 
