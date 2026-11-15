@@ -37,6 +37,10 @@ public class ChatService {
   // 유사도 검색 시 가져올 최대 청크 수
   private static final int TOP_K = 5;
 
+  // 검색 가능한 문서가 없을 때 LLM 대신 보내는 안내 메시지
+  private static final String NO_DOCUMENTS_MESSAGE =
+      "아직 검색할 수 있는 문서가 없어요. '내 문서'에서 문서를 업로드하고 인덱싱이 완료된 뒤 질문해 주세요.";
+
   // 검색된 문서 컨텍스트를 질문과 함께 LLM에 전달하기 위한 프롬프트 템플릿
   private static final String USER_PROMPT_TEMPLATE = """
       다음은 질문과 관련된 문서 내용입니다. 이 내용을 참고하여 답변하세요.
@@ -89,6 +93,12 @@ public class ChatService {
    * @return 출처 이벤트 1건 뒤에 답변 토큰 이벤트가 이어지는 Flux
    */
   private Flux<ServerSentEvent<String>> buildEventStream(String message, List<Document> retrievedDocs) {
+    // 검색 결과가 0건이면(인덱싱 완료된 문서가 없음) 빈 문맥으로 LLM을 호출하지 않는다
+    // → 불필요한 토큰 비용과 문서 근거 없는 답변(환각)을 막는다
+    if (retrievedDocs.isEmpty()) {
+      return buildNoDocumentsStream();
+    }
+
     List<SourceInfo> sources = retrievedDocs.stream()
         .map(this::toSourceInfo)
         .toList();
@@ -110,6 +120,19 @@ public class ChatService {
         .map(chunk -> ServerSentEvent.<String>builder().event("token").data(chunk).build());
 
     return Flux.concat(sourceEvent, tokenStream);
+  }
+
+  /**
+   * 검색할 문서가 없을 때 LLM 호출 없이 안내 메시지만 보내는 SSE 스트림을 만든다.
+   * - 프런트의 이벤트 처리 흐름을 그대로 쓰도록 빈 sources 이벤트 1건 + 안내 token 이벤트 1건으로 구성한다.
+   *
+   * @return 빈 출처 이벤트와 안내 메시지 토큰 이벤트로 구성된 Flux
+   */
+  private Flux<ServerSentEvent<String>> buildNoDocumentsStream() {
+    return Flux.just(
+        ServerSentEvent.<String>builder().event("sources").data("[]").build(),
+        ServerSentEvent.<String>builder().event("token").data(NO_DOCUMENTS_MESSAGE).build()
+    );
   }
 
   /**
