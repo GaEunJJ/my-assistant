@@ -99,6 +99,9 @@ jwt:
 app:
   upload:
     max-file-size: 50MB   # 문서 1개당 최대 크기 (DocumentUploadValidator에서 검증, 초과 시 413)
+  indexing:
+    stale-timeout: 10m        # 이 시간 이상 진행 신호가 없는 PENDING/INDEXING 문서를 멈춘 것으로 보고 FAILED 처리
+    recovery-interval: PT1M   # 멈춘 문서 확인 주기 (서버 시작 직후 1회 + 이후 주기 실행)
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   oauth2:

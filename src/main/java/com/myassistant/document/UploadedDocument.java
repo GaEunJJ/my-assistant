@@ -28,18 +28,6 @@ public class UploadedDocument {
   /** 인덱싱 실패 사유 */
   private String errorMessage;
   private OffsetDateTime createdAt;
+  /** 마지막 상태 변경·진행 신호 시각 (멈춘 문서 판단 기준) */
   private OffsetDateTime updatedAt;
-
-  /**
-   * 상태를 변경한 새 인스턴스를 반환한다. (불변 객체 유지)
-   *
-   * @param newStatus 변경할 상태
-   * @return 상태와 수정 시각이 갱신된 UploadedDocument
-   */
-  public UploadedDocument withStatus(DocumentStatus newStatus) {
-    return toBuilder()
-        .status(newStatus)
-        .updatedAt(OffsetDateTime.now())
-        .build();
-  }
 }
