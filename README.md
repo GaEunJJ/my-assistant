@@ -53,6 +53,7 @@ myassistant는 **사용자 본인의 문서**를 기반으로 답변을 생성�
 | 문서 업로드 | PDF, DOCX, TXT 업로드 (형식 검증, 최대 50MB) 및 자동 인덱싱 |
 | 비동기 인덱싱 | 업로드 즉시 202 응답, 백그라운드에서 추출 → 청킹 → 임베딩 |
 | 문서 관리 | 내 문서 목록, 인덱싱 상태(대기/인덱싱 중/완료/실패) 추적, 벡터 포함 삭제 |
+| 멈춘 문서 복구 | 서버 재시작 등으로 인덱싱이 중단된 문서를 자동으로 실패 처리해 삭제·재업로드 가능 |
 | AI 채팅 | 내 문서 기반으로 질문에 실시간 스트리밍(SSE) 답변 |
 | 출처 표시 | 답변에 사용된 문서의 파일명 · 페이지 · 청크 순번 표시 |
 | 대화 이력 | 대화별 질문·답변 저장, 이전 맥락을 이어가는 후속 질문, 새로고침 후 복원 |
@@ -109,14 +110,31 @@ documents 테이블에 PENDING 저장 → [즉시 HTTP 202 반환]  ← 사용�
 TokenTextSplitter 청킹 (페이지별, 500 토큰 단위)
        │
        ▼
-OpenAI Embedding API (벡터 변환)
-       │
-       ▼
+OpenAI Embedding API (벡터 변환) ─┐  100개 청크 묶음 단위로 반복,
+       │                          │  묶음마다 updated_at 갱신 (진행 신호)
+       ▼                          │
 PgVector 저장 (user_id · document_id · filename · page · chunk_index 메타데이터)
        │
        ▼
 documents 상태 DONE(청크 수 기록) / 실패 시 FAILED(사유 기록)
 ```
+
+### 멈춘 문서 복구 (1분 주기 + 서버 시작 직후)
+
+인덱싱은 서버 메모리의 `@Async` 작업이라, 처리 중 서버가 재시작되면 문서가 `PENDING`/`INDEXING`에 영원히 남습니다.
+(목록에 계속 "인덱싱 중"으로 보이고, 인덱싱 중 문서는 삭제가 막혀 사용자가 정리할 수 없음)
+
+```
+StaleDocumentRecoveryService (@Scheduled)
+       │
+       ▼
+PENDING/INDEXING 이면서 updated_at이 10분 이상 갱신되지 않은 문서 → FAILED + "인덱싱이 중단되었습니다" 사유
+```
+
+- **진행 신호:** 정상 처리 중인 문서는 청크 묶음마다 `updated_at`이 갱신되므로, 큰 문서도 멈춘 문서로 오인되지 않음
+- **시간 기준 판단:** "서버 시작 시 전부 실패 처리"가 아니라 시간 기준이라, 서버를 여러 대로 늘려도 다른 서버가 처리 중인 문서를 건드리지 않음
+- **조건부 상태 변경:** 상태 변경은 모두 `UPDATE ... WHERE status = '현재 상태'`로 수행 → 실패 처리·삭제된 문서를 뒤늦게 끝난 인덱싱 작업이 DONE으로 덮어쓰지 않고, 이미 저장한 벡터는 삭제해 고아 데이터를 남기지 않음
+- 설정: `app.indexing.stale-timeout`(기본 10m), `app.indexing.recovery-interval`(기본 PT1M)
 
 ### 질의응답 흐름 (질문마다)
 
@@ -304,7 +322,8 @@ src/main/java/com/myassistant/
 ├── document/
 │   ├── DocumentController.java   # 문서 업로드/목록/삭제 API
 │   ├── DocumentService.java      # 문서 관리 (업로드 접수, 목록, 벡터 포함 삭제)
-│   ├── DocumentIndexingService.java # 비동기 인덱싱 처리 + 상태 기록
+│   ├── DocumentIndexingService.java # 비동기 인덱싱 처리 + 상태 기록 (조건부 UPDATE, 진행 신호)
+│   ├── StaleDocumentRecoveryService.java # 멈춘 PENDING/INDEXING 문서 주기적 실패 처리
 │   ├── DocumentParser.java       # Tika/PDFBox 기반 텍스트 추출
 │   ├── DocumentUploadValidator.java # 업로드 형식·크기 검증
 │   ├── UploadedDocument.java     # 업로드 문서 엔티티 (인덱싱 상태 포함)
@@ -332,7 +351,8 @@ src/main/java/com/myassistant/
 src/test/java/com/myassistant/
 ├── support/                      # IntegrationTestSupport, FakeEmbeddingModel, RecordingChatModel
 ├── isolation/TenantIsolationIntegrationTest.java # 문서·검색 멀티테넌트 격리
-└── conversation/ConversationIntegrationTest.java # 대화 이력 · 멀티턴 · 격리
+├── conversation/ConversationIntegrationTest.java # 대화 이력 · 멀티턴 · 격리
+└── document/StaleDocumentRecoveryIntegrationTest.java # 멈춘 문서 복구
 ```
 
 ---
@@ -399,7 +419,7 @@ docker compose up -d
 - **실제 DB로 검증:** Testcontainers로 운영과 같은 `pgvector/pgvector:pg16`을 띄워, PgVector의 metadata 필터가 실제로 동작하는지 확인
 - **외부 API 호출 없음:** OpenAI 대신 단어 해시 기반 `FakeEmbeddingModel`과 프롬프트를 기록하는 `RecordingChatModel`을 사용 → API 키·비용 없이 반복 실행 가능
 - **HTTP API 전 구간 검증:** 회원가입 → 업로드 → 비동기 인덱싱 완료 대기 → 목록/삭제/채팅/대화 이력을 WebTestClient로 호출
-- 총 **19개** 테스트 (격리 8 · 대화 이력 10 · 컨텍스트 로딩 1)
+- 총 **22개** 테스트 (격리 8 · 대화 이력 10 · 멈춘 문서 복구 3 · 컨텍스트 로딩 1)
 
 ### 멀티테넌트 격리 테스트 (`TenantIsolationIntegrationTest`)
 
@@ -426,6 +446,14 @@ docker compose up -d
 | 검증 | 빈 질문은 400으로 거절되고 대화가 생성되지 않는다 |
 | 격리 | 다른 사용자의 대화는 목록에 보이지 않고 조회·삭제할 수 없다 (404) |
 | 격리 | 다른 사용자의 대화 ID로 질문을 이어갈 수 없다 (404, 메시지 추가·맥락 유출 없음) |
+
+### 멈춘 문서 복구 테스트 (`StaleDocumentRecoveryIntegrationTest`)
+
+| 검증 내용 |
+|---|
+| 오래 멈춘 PENDING·INDEXING 문서는 FAILED로 바뀌고 사유가 기록되며, 삭제할 수 있다 |
+| 최근 진행 중인 문서와 이미 끝난 문서는 건드리지 않는다 |
+| 실패 처리된 문서는 뒤늦게 실행된 인덱싱 작업이 DONE으로 덮어쓰지 않고 벡터도 저장되지 않는다 |
 
 > 테스트가 실제로 결함을 잡아내는지 확인하기 위해 코드를 일부러 망가뜨려 실행해 보았습니다.  
 > `ChatService`의 `user_id` 필터를 제거하면 격리 테스트 5건이, 후속 질문에 직전 질문을 붙이지 않으면 대화 이력 테스트 3건이 실패합니다.
@@ -574,7 +602,8 @@ Response: 404 Not Found      # 대화가 없거나 다른 사용자의 대화
 ## 🔮 향후 개선 계획
 
 - [ ] 인덱싱 완료 실시간 알림 (현재는 프런트가 3초 간격 polling → SSE/WebSocket 푸시)
-- [ ] 서버 재시작 시 PENDING/INDEXING 상태로 멈춘 문서 복구 (재처리 또는 FAILED 전환)
+- [x] 서버 재시작 시 PENDING/INDEXING 상태로 멈춘 문서 복구 (FAILED 전환)
+- [ ] 멈춘 문서 자동 재처리 (현재는 원본 파일을 저장하지 않아 사용자가 다시 업로드해야 함)
 - [ ] 후속 질문을 LLM으로 독립 질문으로 재작성해 검색 정확도 향상 (Query Rewriting)
 - [ ] 긴 대화 요약 저장으로 오래된 맥락 유지 (현재는 최근 10개 메시지만 사용)
 - [ ] 청킹 전략 개선 (시맨틱 청킹 적용)
