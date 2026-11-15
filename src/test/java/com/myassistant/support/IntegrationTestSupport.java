@@ -3,6 +3,8 @@ package com.myassistant.support;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myassistant.chat.dto.SourceInfo;
+import com.myassistant.conversation.dto.ChatMessageResponse;
+import com.myassistant.conversation.dto.ConversationResponse;
 import com.myassistant.document.DocumentStatus;
 import com.myassistant.document.dto.DocumentResponse;
 import com.myassistant.document.dto.UploadResponse;
@@ -237,17 +239,120 @@ public abstract class IntegrationTestSupport {
    * @return 수신한 SSE 이벤트 목록 (sources 1건 + token N건)
    */
   protected List<ServerSentEvent<String>> chat(String token, String message) {
-    List<ServerSentEvent<String>> events = webTestClient.get()
-        .uri(uriBuilder -> uriBuilder.path("/api/chat/stream").queryParam("message", message).build())
-        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-        .accept(MediaType.TEXT_EVENT_STREAM)
-        .exchange()
+    return chat(token, message, null);
+  }
+
+  /**
+   * 기존 대화를 이어서 채팅 SSE 스트림을 끝까지 받아 이벤트 목록으로 반환한다.
+   *
+   * @param token          JWT
+   * @param message        질문
+   * @param conversationId 이어갈 대화 ID (null이면 새 대화)
+   * @return 수신한 SSE 이벤트 목록 (conversation 1건 + sources 1건 + token N건)
+   */
+  protected List<ServerSentEvent<String>> chat(String token, String message, Long conversationId) {
+    List<ServerSentEvent<String>> events = chatRequest(token, message, conversationId)
         .expectStatus().isOk()
         .returnResult(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
         .getResponseBody()
         .collectList()
         .block(Duration.ofSeconds(20));
     return Objects.requireNonNull(events);
+  }
+
+  /**
+   * 채팅 스트림 요청을 보내고, 상태 코드를 직접 검증할 수 있도록 응답 스펙을 반환한다.
+   *
+   * @param token          JWT
+   * @param message        질문
+   * @param conversationId 이어갈 대화 ID (null이면 파라미터 생략)
+   * @return 응답 스펙
+   */
+  protected WebTestClient.ResponseSpec chatRequest(String token, String message, Long conversationId) {
+    return webTestClient.get()
+        .uri(uriBuilder -> {
+          uriBuilder.path("/api/chat/stream").queryParam("message", message);
+          if (conversationId != null) {
+            uriBuilder.queryParam("conversationId", conversationId);
+          }
+          return uriBuilder.build();
+        })
+        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+        .accept(MediaType.TEXT_EVENT_STREAM)
+        .exchange();
+  }
+
+  /**
+   * SSE 이벤트 목록에서 conversation 이벤트의 대화 ID를 꺼낸다.
+   *
+   * @param events 채팅 SSE 이벤트 목록
+   * @return 대화 ID
+   * @throws Exception conversation 이벤트 JSON 파싱에 실패한 경우
+   */
+  protected Long conversationIdOf(List<ServerSentEvent<String>> events) throws Exception {
+    String json = events.stream()
+        .filter(event -> "conversation".equals(event.event()))
+        .findFirst()
+        .map(ServerSentEvent::data)
+        .orElseThrow(() -> new AssertionError("conversation 이벤트가 없습니다."));
+    return objectMapper.readTree(json).get("conversationId").asLong();
+  }
+
+  /**
+   * 내 대화 목록을 조회한다.
+   *
+   * @param token JWT
+   * @return 대화 목록
+   */
+  protected List<ConversationResponse> listConversations(String token) {
+    return webTestClient.get().uri("/api/conversations")
+        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBodyList(ConversationResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  /**
+   * 대화 메시지 조회를 요청하고, 상태 코드를 직접 검증할 수 있도록 응답 스펙을 반환한다.
+   *
+   * @param token          JWT
+   * @param conversationId 대화 ID
+   * @return 응답 스펙
+   */
+  protected WebTestClient.ResponseSpec messagesRequest(String token, Long conversationId) {
+    return webTestClient.get().uri("/api/conversations/{id}/messages", conversationId)
+        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+        .exchange();
+  }
+
+  /**
+   * 내 대화의 메시지 목록을 조회한다.
+   *
+   * @param token          JWT
+   * @param conversationId 대화 ID
+   * @return 메시지 목록 (시간순)
+   */
+  protected List<ChatMessageResponse> listMessages(String token, Long conversationId) {
+    return messagesRequest(token, conversationId)
+        .expectStatus().isOk()
+        .expectBodyList(ChatMessageResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  /**
+   * 대화 삭제를 요청하고 응답을 검증할 수 있도록 반환한다.
+   *
+   * @param token          JWT
+   * @param conversationId 대화 ID
+   * @return 응답 스펙
+   */
+  protected WebTestClient.ResponseSpec deleteConversation(String token, Long conversationId) {
+    return webTestClient.delete().uri("/api/conversations/{id}", conversationId)
+        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+        .exchange();
   }
 
   /**

@@ -1,5 +1,6 @@
 package com.myassistant.auth;
 
+import com.myassistant.conversation.ConversationNotFoundException;
 import com.myassistant.document.DocumentIndexingInProgressException;
 import com.myassistant.document.DocumentNotFoundException;
 import com.myassistant.document.DocumentUploadValidator;
@@ -48,6 +49,18 @@ public class GlobalExceptionHandler {
    */
   @ExceptionHandler(DocumentNotFoundException.class)
   public Mono<ResponseEntity<Map<String, String>>> handleDocumentNotFound(DocumentNotFoundException e) {
+    return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
+        .body(Map.of("message", e.getMessage())));
+  }
+
+  /**
+   * 대화가 없거나 다른 사용자의 대화일 때 404를 반환한다.
+   *
+   * @param e 대화 미존재 예외
+   * @return 404 Not Found 응답
+   */
+  @ExceptionHandler(ConversationNotFoundException.class)
+  public Mono<ResponseEntity<Map<String, String>>> handleConversationNotFound(ConversationNotFoundException e) {
     return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
         .body(Map.of("message", e.getMessage())));
   }
