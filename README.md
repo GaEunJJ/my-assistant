@@ -251,17 +251,22 @@ src/main/java/com/myassistant/
 git clone https://github.com/{username}/myassistant.git
 cd myassistant
 
-# 2. PostgreSQL 실행 (Docker)
-docker-compose up -d
-
-# 3. 환경변수 설정
+# 2. 환경변수 설정 (Docker 실행 전에 먼저 해야 함)
 cp .env.example .env
 # .env 파일을 열어 OPENAI_API_KEY, DB_PASSWORD, JWT_SECRET 값을 채워넣기
 # JWT_SECRET은 다음 명령으로 생성: openssl rand -base64 32
 
+# 3. PostgreSQL 실행 (Docker Desktop이 켜져 있어야 함)
+# docker-compose.yml이 .env의 DB_PASSWORD를 읽으므로, 2번을 건너뛰면 컨테이너가 시작되지 않음
+docker compose up -d
+
 # 4. 애플리케이션 실행
+# 시작 시 테이블 자동 생성: users/documents(schema.sql), vector_store(Spring AI PgVector)
 ./gradlew bootRun
 ```
+
+> 이미 빈 비밀번호로 컨테이너를 띄웠다면 `docker compose down -v`로 볼륨까지 지운 뒤 다시 실행하세요.
+> PostgreSQL은 **처음 초기화될 때만** 비밀번호를 설정하기 때문에, `.env`만 고쳐서는 반영되지 않습니다.
 
 ### 환경변수 목록
 
