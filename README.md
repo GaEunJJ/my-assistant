@@ -19,6 +19,7 @@
 - [주요 설계 결정 (ADR)](#-주요-설계-결정-adr)
 - [프로젝트 구조](#-프로젝트-구조)
 - [로컬 실행 방법](#-로컬-실행-방법)
+- [테스트](#-테스트)
 - [API 명세](#-api-명세)
 - [성능 개선 지표](#-성능-개선-지표)
 
@@ -185,7 +186,7 @@ SearchRequest.builder()
     .build();
 ```
 
-**결과:** DB 레벨에서 사용자 데이터 완전 격리 보장
+**결과:** DB 레벨에서 사용자 데이터 완전 격리 보장 — 목록·삭제·채팅 검색·LLM 프롬프트·필터 우회 시도까지 통합 테스트로 검증 ([테스트](#-테스트) 참고)
 
 ---
 
@@ -278,6 +279,32 @@ docker compose up -d
 | `DB_USERNAME` | DB 사용자명 (기본값: myassistant) | ❌ |
 | `DB_R2DBC_URL` | R2DBC 연결 URL (기본값: r2dbc:postgresql://localhost:5432/myassistant) | ❌ |
 | `DB_JDBC_URL` | JDBC 연결 URL — PgVector 내부용 (기본값: jdbc:postgresql://localhost:5432/myassistant) | ❌ |
+
+---
+
+## 🧪 테스트
+
+```bash
+# Docker Desktop이 켜져 있어야 함 (Testcontainers가 pgvector 컨테이너를 자동으로 띄움)
+./gradlew test
+```
+
+- **실제 DB로 검증:** Testcontainers로 운영과 같은 `pgvector/pgvector:pg16`을 띄워, PgVector의 metadata 필터가 실제로 동작하는지 확인
+- **외부 API 호출 없음:** OpenAI 대신 단어 해시 기반 `FakeEmbeddingModel`과 프롬프트를 기록하는 `RecordingChatModel`을 사용 → API 키·비용 없이 반복 실행 가능
+- **HTTP API 전 구간 검증:** 회원가입 → 업로드 → 비동기 인덱싱 완료 대기 → 목록/삭제/채팅을 WebTestClient로 호출
+
+### 멀티테넌트 격리 테스트 (`TenantIsolationIntegrationTest`)
+
+| 구분 | 검증 내용 |
+|---|---|
+| 문서 목록 | 다른 사용자의 문서는 목록에 보이지 않는다 |
+| 문서 삭제 | 다른 사용자의 문서는 삭제할 수 없다 (404, 문서·벡터 유지) |
+| 문서 삭제 | 내 문서를 삭제해도 같은 내용의 다른 사용자 벡터는 남는다 |
+| 채팅 검색 | 질문과 일치하는 문서를 서로 갖고 있어도 검색 결과·출처·**LLM 프롬프트**에 본인 문서만 포함된다 |
+| 채팅 검색 | 내 문서가 없으면 다른 사용자 문서가 있어도 검색되지 않고 LLM을 호출하지 않는다 |
+| 필터 우회 시도 | `a" \|\| $.user_id != "`, `o'neil' OR '1'='1` 등 따옴표·연산자가 포함된 아이디로 필터 식을 조작해 다른 사용자 문서를 검색할 수 없다 |
+
+> `ChatService`의 `user_id` 필터를 제거하면 채팅 검색·필터 우회 테스트 5건이 실패하는 것을 확인했습니다 (테스트가 실제로 격리 위반을 잡아냄).
 
 ---
 

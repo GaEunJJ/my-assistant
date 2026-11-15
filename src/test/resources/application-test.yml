@@ -1,0 +1,26 @@
+# 통합 테스트 전용 설정 (@ActiveProfiles("test"))
+# - DB 접속 정보는 IntegrationTestSupport의 @DynamicPropertySource가 Testcontainers 값으로 주입한다
+# - OpenAI 자동 구성을 끄고 테스트용 가짜 EmbeddingModel/ChatModel을 사용한다 (외부 API 호출·비용 없음)
+
+spring:
+  ai:
+    model:
+      embedding: none
+      chat: none
+    openai:
+      api-key: test-api-key
+
+logging:
+  level:
+    org.springframework.ai: INFO
+    com.myassistant: INFO
+
+# application.yml의 필수 환경변수 플레이스홀더를 테스트 값으로 채운다
+DB_PASSWORD: test
+JWT_SECRET: dGVzdC1zZWNyZXQta2V5LWZvci1pbnRlZ3JhdGlvbi10ZXN0cy0zMmJ5dGVz
+KAKAO_CLIENT_ID: test
+KAKAO_CLIENT_SECRET: test
+NAVER_CLIENT_ID: test
+NAVER_CLIENT_SECRET: test
+GOOGLE_CLIENT_ID: test
+GOOGLE_CLIENT_SECRET: test
