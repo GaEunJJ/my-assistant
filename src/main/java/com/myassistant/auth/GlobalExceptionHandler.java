@@ -1,5 +1,7 @@
 package com.myassistant.auth;
 
+import com.myassistant.document.DocumentIndexingInProgressException;
+import com.myassistant.document.DocumentNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +31,30 @@ public class GlobalExceptionHandler {
         .collect(Collectors.joining(", "));
     return Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST)
         .body(Map.of("message", message)));
+  }
+
+  /**
+   * 문서가 없거나 다른 사용자의 문서일 때 404를 반환한다.
+   *
+   * @param e 문서 미존재 예외
+   * @return 404 Not Found 응답
+   */
+  @ExceptionHandler(DocumentNotFoundException.class)
+  public Mono<ResponseEntity<Map<String, String>>> handleDocumentNotFound(DocumentNotFoundException e) {
+    return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
+        .body(Map.of("message", e.getMessage())));
+  }
+
+  /**
+   * 인덱싱 중인 문서를 삭제하려 할 때 409를 반환한다.
+   *
+   * @param e 인덱싱 진행 중 예외
+   * @return 409 Conflict 응답
+   */
+  @ExceptionHandler(DocumentIndexingInProgressException.class)
+  public Mono<ResponseEntity<Map<String, String>>> handleIndexingInProgress(DocumentIndexingInProgressException e) {
+    return Mono.just(ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(Map.of("message", e.getMessage())));
   }
 
   // 위에서 처리하지 못한 모든 예외에 대한 최종 안전망 — 내부 오류 상세는 로그로만 남기고 클라이언트에는 노출하지 않음

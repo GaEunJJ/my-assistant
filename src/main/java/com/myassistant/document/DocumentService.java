@@ -1,104 +1,106 @@
 package com.myassistant.document;
 
+import com.myassistant.document.dto.DocumentResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.OffsetDateTime;
 
 /**
- * 문서 비동기 인덱싱 서비스
- * - 파일 텍스트 추출(페이지 단위) → 청킹 → 임베딩 → PgVector 저장
+ * 업로드 문서 관리 서비스
+ * - 업로드 접수(PENDING 저장 후 비동기 인덱싱 시작), 목록 조회, 삭제(벡터 포함)를 담당한다
+ * - 모든 조회/삭제는 userId 조건으로 본인 문서만 다룬다 (멀티테넌트 격리)
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DocumentService {
 
+  private final UploadedDocumentRepository documentRepository;
+  private final DocumentIndexingService indexingService;
   private final VectorStore vectorStore;
-  private final DocumentParser documentParser;
-
-  // 청킹 설정: 500 토큰 단위, 50 토큰 overlap으로 문맥 단절 최소화
-  private static final int CHUNK_SIZE = 500;
-  private static final int CHUNK_OVERLAP = 50;
 
   /**
-   * 문서를 백그라운드에서 비동기로 인덱싱
-   * - 컨트롤러는 FilePart 내용을 바이트 배열로 다 읽은 뒤 즉시 202 반환하고, 이 메서드가 별도 스레드에서 실행됨
+   * 업로드된 문서를 PENDING 상태로 저장하고 백그라운드 인덱싱을 시작한다.
    *
-   * @param fileContent 업로드된 파일의 전체 바이트 배열
+   * @param fileContent 파일 전체 바이트 배열
    * @param filename    원본 파일명
-   * @param userId      업로드한 사용자 ID (멀티테넌트 격리용)
+   * @param userId      업로드한 사용자 ID
+   * @return PENDING 상태로 저장된 문서
    */
-  @Async
-  public void indexAsync(byte[] fileContent, String filename, String userId) {
-    log.info("문서 인덱싱 시작 - userId: {}, file: {}", userId, filename);
+  public Mono<UploadedDocument> upload(byte[] fileContent, String filename, String userId) {
+    OffsetDateTime now = OffsetDateTime.now();
+    UploadedDocument pending = UploadedDocument.builder()
+        .userId(userId)
+        .filename(filename != null ? filename : "unknown")
+        .status(DocumentStatus.PENDING)
+        .createdAt(now)
+        .updatedAt(now)
+        .build();
 
-    try {
-      // 1. 페이지 단위로 텍스트 추출 (PDF는 실제 페이지 번호 보존)
-      List<DocumentParser.PageText> pages = documentParser.parsePages(fileContent, filename);
-
-      // 2. 페이지별로 청킹 후 출처 추적용 메타데이터(user_id, filename, page, chunk_index) 태깅
-      List<Document> taggedChunks = tagChunks(pages, filename, userId);
-
-      // 3. 임베딩 생성 및 PgVector 저장
-      vectorStore.add(taggedChunks);
-
-      log.info("문서 인덱싱 완료 - userId: {}, file: {}, chunks: {}", userId, filename, taggedChunks.size());
-
-    } catch (IOException e) {
-      log.error("문서 텍스트 추출 실패 - userId: {}, file: {}", userId, filename, e);
-    } catch (Exception e) {
-      // 비동기 스레드에서 발생한 예외는 클라이언트로 전달되지 않으므로 반드시 로깅으로 확인
-      log.error("문서 인덱싱 실패 - userId: {}, file: {}", userId, filename, e);
-    }
+    return documentRepository.save(pending)
+        // 저장된 문서 ID가 있어야 벡터 메타데이터에 document_id를 남길 수 있으므로 저장 후 인덱싱 시작
+        // indexAsync는 @Async라 즉시 반환되며 이벤트 루프를 막지 않는다
+        .doOnNext(saved -> indexingService.indexAsync(saved, fileContent));
   }
 
   /**
-   * 페이지별 텍스트를 청킹하고, 출처 표시에 필요한 메타데이터를 붙인 Document 목록을 만든다.
-   * - 페이지 경계를 넘어 청킹되지 않도록 페이지마다 개별적으로 분할한다.
-   * - chunk_index는 문서 전체를 기준으로 0부터 순서대로 매긴다.
+   * 사용자의 문서 목록을 최신 업로드 순으로 조회한다.
    *
-   * @param pages    페이지 번호와 텍스트 목록
-   * @param filename 업로드된 파일명
-   * @param userId   업로드한 사용자 ID (멀티테넌트 격리용)
-   * @return user_id/filename/page/chunk_index 메타데이터가 태깅된 Document 목록
+   * @param userId 사용자 ID
+   * @return 문서 응답 DTO 스트림
    */
-  private List<Document> tagChunks(List<DocumentParser.PageText> pages, String filename, String userId) {
-    TokenTextSplitter splitter = TokenTextSplitter.builder()
-        .withChunkSize(CHUNK_SIZE)
-        .withMinChunkSizeChars(CHUNK_OVERLAP)
-        .withMinChunkLengthToEmbed(5)
-        .withMaxNumChunks(10000)
-        .withKeepSeparator(true)
-        .build();
+  public Flux<DocumentResponse> findAll(String userId) {
+    return documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId)
+        .map(DocumentResponse::from);
+  }
 
-    List<Document> taggedChunks = new ArrayList<>();
-    int chunkIndex = 0;
+  /**
+   * 사용자 본인의 문서와 해당 문서의 벡터 청크를 모두 삭제한다.
+   *
+   * @param documentId 삭제할 문서 ID
+   * @param userId     사용자 ID
+   * @return 삭제 완료 신호
+   * @throws DocumentNotFoundException 문서가 없거나 다른 사용자의 문서인 경우
+   * @throws DocumentIndexingInProgressException 인덱싱이 진행 중인 경우 (삭제 후 벡터가 뒤늦게 저장되는 것을 방지)
+   */
+  public Mono<Void> delete(Long documentId, String userId) {
+    return documentRepository.findByIdAndUserId(documentId, userId)
+        .switchIfEmpty(Mono.error(new DocumentNotFoundException(documentId)))
+        .flatMap(document -> {
+          if (document.getStatus().isInProgress()) {
+            return Mono.error(new DocumentIndexingInProgressException());
+          }
+          // 벡터 먼저 삭제: 벡터 삭제가 실패하면 문서 행이 남아 사용자가 다시 삭제를 시도할 수 있다
+          return deleteVectors(documentId, userId)
+              .then(documentRepository.delete(document));
+        })
+        .doOnSuccess(unused -> log.info("문서 삭제 완료 - userId: {}, documentId: {}", userId, documentId));
+  }
 
-    for (DocumentParser.PageText page : pages) {
-      List<Document> pageChunks = splitter.split(List.of(new Document(page.text())));
-
-      for (Document chunk : pageChunks) {
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("user_id", userId);
-        metadata.put("filename", filename != null ? filename : "unknown");
-        metadata.put("chunk_index", chunkIndex++);
-        if (page.pageNumber() != null) {
-          metadata.put("page", page.pageNumber());
-        }
-        taggedChunks.add(new Document(chunk.getText(), metadata));
-      }
-    }
-
-    return taggedChunks;
+  /**
+   * 문서에 속한 벡터 청크를 PgVector에서 삭제한다.
+   * - user_id 조건도 함께 걸어 다른 사용자의 벡터가 지워지는 일이 없도록 한다.
+   * - PgVectorStore는 JDBC(블로킹)이므로 boundedElastic 스케줄러에서 실행한다.
+   *
+   * @param documentId 문서 ID
+   * @param userId     사용자 ID
+   * @return 삭제 완료 신호
+   */
+  private Mono<Void> deleteVectors(Long documentId, String userId) {
+    FilterExpressionBuilder filterBuilder = new FilterExpressionBuilder();
+    return Mono.fromRunnable(() -> vectorStore.delete(
+            filterBuilder.and(
+                filterBuilder.eq("user_id", userId),
+                filterBuilder.eq("document_id", documentId)
+            ).build()))
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
   }
 }

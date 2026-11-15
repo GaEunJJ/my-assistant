@@ -218,9 +218,13 @@ src/main/java/com/myassistant/
 │   ├── User.java                 # 사용자 엔티티
 │   └── UserRepository.java       # R2DBC 사용자 레포지토리
 ├── document/
-│   ├── DocumentController.java   # 파일 업로드 API
-│   ├── DocumentService.java      # 비동기 인덱싱 처리
-│   └── DocumentParser.java       # Tika 기반 텍스트 추출
+│   ├── DocumentController.java   # 문서 업로드/목록/삭제 API
+│   ├── DocumentService.java      # 문서 관리 (업로드 접수, 목록, 벡터 포함 삭제)
+│   ├── DocumentIndexingService.java # 비동기 인덱싱 처리 + 상태 기록
+│   ├── DocumentParser.java       # Tika/PDFBox 기반 텍스트 추출
+│   ├── UploadedDocument.java     # 업로드 문서 엔티티 (인덱싱 상태 포함)
+│   ├── UploadedDocumentRepository.java # R2DBC 문서 레포지토리
+│   └── DocumentStatus.java       # PENDING/INDEXING/DONE/FAILED
 ├── chat/
 │   ├── ChatController.java       # SSE 스트리밍 API
 │   └── ChatService.java          # RAG 기반 답변 생성
@@ -303,7 +307,33 @@ Content-Type: multipart/form-data
 Authorization: Bearer {JWT}
 
 Response: 202 Accepted
-{"message": "인덱싱을 시작했어요. 잠시 후 채팅이 가능합니다."}
+{
+  "message": "인덱싱을 시작했어요. 완료되면 채팅에서 사용할 수 있습니다.",
+  "document": {"id": 12, "filename": "계약서.pdf", "status": "PENDING", "chunkCount": null, "errorMessage": null, "createdAt": "2026-11-15T10:00:00+09:00"}
+}
+```
+
+### 내 문서 목록
+```
+GET /api/documents
+Authorization: Bearer {JWT}
+
+Response: 200 OK
+# status: PENDING(대기) → INDEXING(인덱싱 중) → DONE(완료) / FAILED(실패, errorMessage에 사유)
+[
+  {"id": 12, "filename": "계약서.pdf", "status": "DONE", "chunkCount": 34, "errorMessage": null, "createdAt": "2026-11-15T10:00:00+09:00"},
+  {"id": 11, "filename": "스캔본.pdf", "status": "FAILED", "chunkCount": null, "errorMessage": "문서에서 추출된 텍스트가 없습니다. (스캔 이미지 문서는 지원하지 않습니다)", "createdAt": "2026-11-14T18:20:00+09:00"}
+]
+```
+
+### 문서 삭제
+```
+DELETE /api/documents/{id}
+Authorization: Bearer {JWT}
+
+Response: 204 No Content     # 문서와 해당 문서의 벡터 청크를 함께 삭제
+Response: 404 Not Found      # 문서가 없거나 다른 사용자의 문서
+Response: 409 Conflict       # 인덱싱 진행 중 (완료/실패 후 삭제 가능)
 ```
 
 ### AI 채팅 (SSE 스트리밍)
