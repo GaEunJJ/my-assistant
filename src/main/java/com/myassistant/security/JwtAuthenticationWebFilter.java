@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.ReactiveUserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -11,6 +12,8 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+
+import java.util.Optional;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 
 @Component
@@ -38,13 +41,19 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     String username = jwtProvider.extractUsername(token);
 
     return userDetailsService.findByUsername(username)
-        .map(userDetails -> new UsernamePasswordAuthenticationToken(
+        .map(userDetails -> Optional.of(new UsernamePasswordAuthenticationToken(
             userDetails, null, userDetails.getAuthorities()
-        ))
-        .flatMap(auth ->
-            chain.filter(exchange)
-                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
-        );
+        )))
+        // 토큰은 유효하지만 사용자가 DB에 없으면(탈퇴/DB 초기화 등) 500이 나지 않도록
+        // 인증 없이 체인을 이어가 401로 처리되게 한다
+        .onErrorResume(UsernameNotFoundException.class, e -> Mono.empty())
+        .defaultIfEmpty(Optional.empty())
+        // chain.filter()는 항상 빈 Mono<Void>로 끝나므로, 그 뒤에 switchIfEmpty를 붙이면 체인이 두 번 실행된다.
+        // 그래서 인증 여부를 Optional로 먼저 확정한 뒤 체인을 정확히 한 번만 실행한다
+        .flatMap(auth -> auth
+            .map(authToken -> chain.filter(exchange)
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authToken)))
+            .orElseGet(() -> chain.filter(exchange)));
   }
 
   /**

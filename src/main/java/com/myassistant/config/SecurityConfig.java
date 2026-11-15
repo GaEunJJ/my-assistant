@@ -12,7 +12,13 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.web.server.DelegatingServerAuthenticationEntryPoint;
+import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
+import org.springframework.security.web.server.authentication.HttpStatusServerEntryPoint;
+import org.springframework.security.web.server.authentication.RedirectServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -48,6 +54,11 @@ public class SecurityConfig {
             .pathMatchers("/oauth2/authorization/**", "/login/oauth2/code/**").permitAll()
             .anyExchange().authenticated()
         )
+        // /api/** 미인증 요청은 로그인 페이지(302) 대신 401 반환
+        // 기본값(oauth2Login의 /login 리다이렉트)이면 axios가 HTML을 받아 JSON처럼 처리하게 됨
+        .exceptionHandling(exceptions -> exceptions
+            .authenticationEntryPoint(apiAuthenticationEntryPoint())
+        )
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
         // OAuth2 소셜 로그인 설정
@@ -59,6 +70,22 @@ public class SecurityConfig {
         )
         .addFilterAt(jwtAuthenticationWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
         .build();
+  }
+
+  /**
+   * /api/** 경로는 401, 그 외 경로는 기존처럼 로그인 페이지로 리다이렉트하는 인증 진입점을 만든다.
+   *
+   * @return 경로별로 위임하는 인증 진입점
+   */
+  private ServerAuthenticationEntryPoint apiAuthenticationEntryPoint() {
+    DelegatingServerAuthenticationEntryPoint entryPoint = new DelegatingServerAuthenticationEntryPoint(
+        new DelegatingServerAuthenticationEntryPoint.DelegateEntry(
+            ServerWebExchangeMatchers.pathMatchers("/api/**"),
+            new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)
+        )
+    );
+    entryPoint.setDefaultEntryPoint(new RedirectServerAuthenticationEntryPoint("/login"));
+    return entryPoint;
   }
 
   private CorsConfigurationSource corsConfigurationSource() {
