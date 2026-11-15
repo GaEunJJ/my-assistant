@@ -316,6 +316,9 @@ Response: 202 Accepted
   "message": "인덱싱을 시작했어요. 완료되면 채팅에서 사용할 수 있습니다.",
   "document": {"id": 12, "filename": "계약서.pdf", "status": "PENDING", "chunkCount": null, "errorMessage": null, "createdAt": "2026-11-15T10:00:00+09:00"}
 }
+
+Response: 400 Bad Request         # 빈 파일, 또는 PDF/DOCX/TXT 이외 형식
+Response: 413 Payload Too Large   # 50MB 초과 (app.upload.max-file-size)
 ```
 
 ### 내 문서 목록

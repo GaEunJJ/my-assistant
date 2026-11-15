@@ -2,7 +2,11 @@ package com.myassistant.auth;
 
 import com.myassistant.document.DocumentIndexingInProgressException;
 import com.myassistant.document.DocumentNotFoundException;
+import com.myassistant.document.DocumentUploadValidator;
+import com.myassistant.document.FileTooLargeException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,7 +19,10 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+  private final DocumentUploadValidator uploadValidator;
 
   @ExceptionHandler(IllegalArgumentException.class)
   public Mono<ResponseEntity<Map<String, String>>> handleIllegalArgument(IllegalArgumentException e) {
@@ -55,6 +62,30 @@ public class GlobalExceptionHandler {
   public Mono<ResponseEntity<Map<String, String>>> handleIndexingInProgress(DocumentIndexingInProgressException e) {
     return Mono.just(ResponseEntity.status(HttpStatus.CONFLICT)
         .body(Map.of("message", e.getMessage())));
+  }
+
+  /**
+   * 업로드 파일이 최대 허용 크기를 넘었을 때 413을 반환한다.
+   *
+   * @param e 파일 크기 초과 예외
+   * @return 413 Payload Too Large 응답
+   */
+  @ExceptionHandler(FileTooLargeException.class)
+  public Mono<ResponseEntity<Map<String, String>>> handleFileTooLarge(FileTooLargeException e) {
+    return Mono.just(ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+        .body(Map.of("message", e.getMessage())));
+  }
+
+  /**
+   * 멀티파트 코덱 단계에서 파트 크기 한도(spring.webflux.multipart.max-disk-usage-per-part)를 넘었을 때 413을 반환한다.
+   * - 컨트롤러에 도달하기 전에 발생하므로 FileTooLargeException과 별도로 처리한다.
+   *
+   * @param e 데이터 버퍼 한도 초과 예외
+   * @return 413 Payload Too Large 응답
+   */
+  @ExceptionHandler(DataBufferLimitException.class)
+  public Mono<ResponseEntity<Map<String, String>>> handleDataBufferLimit(DataBufferLimitException e) {
+    return handleFileTooLarge(new FileTooLargeException(uploadValidator.maxFileSizeLabel()));
   }
 
   // 위에서 처리하지 못한 모든 예외에 대한 최종 안전망 — 내부 오류 상세는 로그로만 남기고 클라이언트에는 노출하지 않음

@@ -57,11 +57,12 @@ spring:
             user-info-uri: https://openapi.naver.com/v1/nid/me
             user-name-attribute: response
 
-  # 파일 업로드 설정
-  servlet:
+  # 파일 업로드 설정 (WebFlux 멀티파트)
+  # spring.servlet.multipart.*는 Servlet(MVC) 전용이라 WebFlux에서는 무시된다
+  webflux:
     multipart:
-      max-file-size: 50MB      # 파일 하나 최대 크기
-      max-request-size: 50MB   # 요청 전체 최대 크기
+      max-disk-usage-per-part: 51MB  # 파트당 임시 저장 한도 (app.upload.max-file-size보다 약간 크게 두어 컨트롤러에서 413 안내)
+      max-parts: 10                  # 요청당 최대 파트 수
 
   # DB 스키마 자동 초기화 (최초 실행 시 schema.sql 실행)
   sql:
@@ -96,6 +97,8 @@ jwt:
 
 # 프런트엔드 CORS 허용 도메인 (쉼표로 여러 개 지정 가능, 운영 배포 시 환경변수로 덮어쓰기)
 app:
+  upload:
+    max-file-size: 50MB   # 문서 1개당 최대 크기 (DocumentUploadValidator에서 검증, 초과 시 413)
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   oauth2:

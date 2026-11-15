@@ -4,6 +4,7 @@ import com.myassistant.document.dto.DocumentResponse;
 import com.myassistant.document.dto.UploadResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +33,7 @@ import reactor.core.publisher.Mono;
 public class DocumentController {
 
   private final DocumentService documentService;
+  private final DocumentUploadValidator uploadValidator;
 
   /**
    * POST /api/documents/upload
@@ -41,7 +43,8 @@ public class DocumentController {
    * @param file        업로드된 파일 (WebFlux 멀티파트 Part)
    * @param userDetails 인증된 사용자 정보
    * @return 202 Accepted 응답과 생성된 문서 정보
-   * @throws IllegalArgumentException 파일이 비어있는 경우
+   * @throws IllegalArgumentException 파일이 비어있거나 지원하지 않는 형식인 경우 (400)
+   * @throws FileTooLargeException    파일이 최대 허용 크기를 넘는 경우 (413)
    */
   @PostMapping("/upload")
   public Mono<ResponseEntity<UploadResponse>> upload(
@@ -51,9 +54,15 @@ public class DocumentController {
     String userId = userDetails.getUsername();
     String filename = file.filename();
 
+    // 본문을 읽기 전에 확장자부터 검사 (지원하지 않는 파일은 바로 400)
+    uploadValidator.validateFilename(filename);
+
     // FilePart의 콘텐츠는 요청 처리가 끝나면 더 이상 읽을 수 없으므로,
     // 백그라운드 인덱싱에 넘기기 전에 바이트 배열로 전부 읽어둔다
-    return DataBufferUtils.join(file.content())
+    // maxBytes를 넘으면 메모리에 다 올리기 전에 DataBufferLimitException으로 중단된다
+    return DataBufferUtils.join(file.content(), uploadValidator.maxBytes())
+        .onErrorMap(DataBufferLimitException.class,
+            e -> new FileTooLargeException(uploadValidator.maxFileSizeLabel()))
         .map(this::toByteArray)
         .flatMap(bytes -> {
           if (bytes.length == 0) {
