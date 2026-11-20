@@ -2,6 +2,7 @@
 
 > PDF, DOCX 등 문서를 업로드하면, 그 문서를 기반으로 AI가 실시간으로 답변해주는 멀티테넌트 RAG 챗봇 서비스
 
+[![CI](https://github.com/GaEunJJ/my-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/GaEunJJ/my-assistant/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-brightgreen?style=flat-square&logo=springboot)
 ![Spring AI](https://img.shields.io/badge/Spring_AI-1.1-green?style=flat-square)
@@ -206,4 +207,4 @@ docker compose up -d
 - [ ] 무료/유료 티어 분리 (문서 용량 제한)
 - [ ] Ollama 연동으로 로컬 LLM 지원 (비용 절감)
 - [ ] 재인덱싱 파이프라인 (임베딩 모델 교체 대응)
-- [ ] GitHub Actions CI (테스트 자동 실행)
+- [x] GitHub Actions CI (push·PR마다 통합 테스트 자동 실행)
